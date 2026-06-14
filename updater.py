@@ -8,7 +8,7 @@ import webbrowser
 from packaging import version
 
 # 应用当前版本
-CURRENT_VERSION = "1.0.2"
+CURRENT_VERSION = "1.0.3"
 
 # GitHub仓库信息
 GITHUB_REPO = "Gwshhh/file-converter"  # 格式: owner/repo
