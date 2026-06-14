@@ -1342,10 +1342,24 @@ class UpdateDialog(QDialog):
             notes_layout.addWidget(notes_title)
             notes_layout.addSpacing(8)
 
-            notes_text = QLabel(notes[:500])  # 限制长度
+            # 使用滚动区域防止内容过长
+            from PySide6.QtWidgets import QScrollArea, QTextEdit
+            notes_text = QTextEdit()
             notes_text.setObjectName("DialogMessage")
-            notes_text.setWordWrap(True)
-            notes_text.setMaximumHeight(200)
+            notes_text.setReadOnly(True)
+            notes_text.setPlainText(notes[:800])  # 限制长度
+            notes_text.setMaximumHeight(150)
+            notes_text.setMinimumHeight(100)
+            notes_text.setFrameStyle(0)
+            notes_text.setStyleSheet("""
+                QTextEdit {
+                    background: transparent;
+                    border: none;
+                    color: #475569;
+                    font-size: 13px;
+                    line-height: 1.6;
+                }
+            """)
             notes_layout.addWidget(notes_text)
 
             body.addWidget(notes_box)
