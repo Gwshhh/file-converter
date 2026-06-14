@@ -801,7 +801,6 @@ class ConverterApp(QMainWindow):
 
         self.format_buttons = {}
         self.setup_ui()
-        self.setup_menu()
         self.update_output_label()
 
         # 启动时检查更新（在后台线程）
@@ -830,6 +829,43 @@ class ConverterApp(QMainWindow):
         title_box.addWidget(subtitle)
         header.addLayout(title_box)
         header.addStretch()
+
+        # 帮助按钮
+        help_btn = QPushButton("帮助")
+        help_btn.setObjectName("HelpButton")
+        help_btn.setFixedSize(68, 34)
+        help_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        help_menu = QMenu(help_btn)
+        help_menu.setStyleSheet("""
+            QMenu {
+                background: #FFFFFF;
+                border: 1px solid #E2E8F0;
+                border-radius: 8px;
+                padding: 8px;
+            }
+            QMenu::item {
+                padding: 8px 20px;
+                border-radius: 6px;
+                color: #334155;
+            }
+            QMenu::item:selected {
+                background: #F1F5F9;
+            }
+        """)
+
+        about_action = QAction("关于", self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+
+        if UPDATER_AVAILABLE:
+            check_update_action = QAction("检查更新", self)
+            check_update_action.triggered.connect(self.manual_check_updates)
+            help_menu.addAction(check_update_action)
+
+        help_btn.setMenu(help_menu)
+        header.addWidget(help_btn)
+
+        header.addSpacing(8)
 
         self.status_chip = QLabel("就绪")
         self.status_chip.setObjectName("StatusChip")
@@ -964,23 +1000,7 @@ class ConverterApp(QMainWindow):
         for button in self.format_buttons.values():
             button.toggled.connect(self.update_summary)
 
-    def setup_menu(self):
-        """设置菜单栏"""
-        menubar = self.menuBar()
-
-        # 帮助菜单
-        help_menu = QMenu("帮助", self)
-
-        about_action = QAction("关于", self)
-        about_action.triggered.connect(self.show_about)
-        help_menu.addAction(about_action)
-
-        if UPDATER_AVAILABLE:
-            check_update_action = QAction("检查更新", self)
-            check_update_action.triggered.connect(self.manual_check_updates)
-            help_menu.addAction(check_update_action)
-
-        menubar.addMenu(help_menu)
+    # 移除 setup_menu，改用按钮形式
 
     def make_card(self) -> QFrame:
         card = QFrame()
@@ -1404,6 +1424,21 @@ QLabel#StatusChip[state="error"] {
 QLabel#StatusChip[state="warning"] {
     background: #FFEDD5;
     color: #9A3412;
+}
+QPushButton#HelpButton {
+    background: #FFFFFF;
+    color: #334155;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    font-weight: 600;
+    padding: 0 12px;
+}
+QPushButton#HelpButton:hover {
+    background: #F8FAFC;
+    border-color: #94A3B8;
+}
+QPushButton#HelpButton::menu-indicator {
+    image: none;
 }
 QFrame#Card {
     background: #FFFFFF;
