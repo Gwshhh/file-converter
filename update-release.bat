@@ -88,6 +88,24 @@ if "%new_version%"=="" (
 )
 
 echo.
+echo Updating version in updater.py...
+powershell -Command "(Get-Content updater.py) -replace 'CURRENT_VERSION = \".*\"', 'CURRENT_VERSION = \"%new_version%\"' | Set-Content updater.py"
+echo Done!
+
+echo.
+echo Committing version update...
+git add updater.py
+git commit -m "chore: update version to %new_version%"
+git push
+echo Done!
+
+if "%new_version%"=="" (
+    echo ERROR: Version cannot be empty
+    pause
+    exit /b 1
+)
+
+echo.
 set /p release_notes="Enter release notes (Enter for default): "
 
 if "%release_notes%"=="" (

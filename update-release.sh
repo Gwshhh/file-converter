@@ -70,6 +70,18 @@ if [ -z "$new_version" ]; then
 fi
 
 echo ""
+echo "📝 更新 updater.py 版本号..."
+sed -i "s/CURRENT_VERSION = \".*\"/CURRENT_VERSION = \"$new_version\"/" updater.py
+echo "✅ 版本号已更新"
+
+echo ""
+echo "📝 提交版本号更新..."
+git add updater.py
+git commit -m "chore: update version to $new_version"
+git push
+echo "✅ 版本号已推送"
+
+echo ""
 read -p "请输入版本说明 (按回车使用默认): " release_notes
 
 if [ -z "$release_notes" ]; then
