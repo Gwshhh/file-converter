@@ -1359,6 +1359,28 @@ class UpdateDialog(QDialog):
                     font-size: 13px;
                     line-height: 1.6;
                 }
+                QScrollBar:vertical {
+                    background: #F1F5F9;
+                    width: 8px;
+                    border-radius: 4px;
+                    margin: 0px;
+                }
+                QScrollBar::handle:vertical {
+                    background: #CBD5E1;
+                    border-radius: 4px;
+                    min-height: 20px;
+                }
+                QScrollBar::handle:vertical:hover {
+                    background: #94A3B8;
+                }
+                QScrollBar::add-line:vertical,
+                QScrollBar::sub-line:vertical {
+                    height: 0px;
+                }
+                QScrollBar::add-page:vertical,
+                QScrollBar::sub-page:vertical {
+                    background: transparent;
+                }
             """)
             notes_layout.addWidget(notes_text)
 
