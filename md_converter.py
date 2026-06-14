@@ -1426,19 +1426,21 @@ QLabel#StatusChip[state="warning"] {
     color: #9A3412;
 }
 QPushButton#HelpButton {
-    background: #FFFFFF;
-    color: #334155;
-    border: 1px solid #CBD5E1;
+    background: #2563EB;
+    color: white;
+    border: 1px solid #2563EB;
     border-radius: 8px;
-    font-weight: 600;
-    padding: 0 12px;
+    font-weight: 700;
+    padding: 0 16px;
+    text-align: center;
 }
 QPushButton#HelpButton:hover {
-    background: #F8FAFC;
-    border-color: #94A3B8;
+    background: #1D4ED8;
+    border-color: #1D4ED8;
 }
 QPushButton#HelpButton::menu-indicator {
     image: none;
+    width: 0px;
 }
 QFrame#Card {
     background: #FFFFFF;
