@@ -10,8 +10,8 @@ from packaging import version
 # 应用当前版本
 CURRENT_VERSION = "1.0.0"
 
-# GitHub仓库信息（发布后需要更新）
-GITHUB_REPO = "your-username/file-converter"  # 格式: owner/repo
+# GitHub仓库信息
+GITHUB_REPO = "Gwshhh/file-converter"  # 格式: owner/repo
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 RELEASE_PAGE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
