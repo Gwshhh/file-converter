@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pypandoc
 import pythoncom
 import win32com.client
+from pdf2docx import Converter as PdfConverter
 from PySide6.QtCore import QThread, Qt, QUrl, Signal
 from PySide6.QtGui import (
     QAction,
@@ -157,22 +158,59 @@ def docx_to_pdf_word(docx_path: str, pdf_path: str):
         pythoncom.CoUninitialize()
 
 
-def pdf_to_docx_word(pdf_path: str, docx_path: str):
-    """使用 Microsoft Word 将 PDF 转为 DOCX（保留格式）"""
+def _pdf_to_docx_pdf2docx(pdf_path: str, docx_path: str):
+    """使用 pdf2docx 将 PDF 转为 DOCX（回退方案）"""
+    cv = PdfConverter(os.path.abspath(pdf_path))
+    try:
+        cv.convert(os.path.abspath(docx_path))
+    finally:
+        cv.close()
+
+
+def _pdf_to_docx_word_com(pdf_path: str, docx_path: str):
+    """使用 Microsoft Word 直接打开 PDF 并另存为 DOCX。
+
+    Word 2016+ 内置 PDF 重排引擎，对中文、字体、版式的还原显著
+    优于 pdf2docx，且不会把正文拆进大量表格。
+    """
     pythoncom.CoInitialize()
     word = None
     doc = None
     try:
         word = win32com.client.Dispatch("Word.Application")
         word.Visible = False
-        doc = word.Documents.Open(os.path.abspath(pdf_path))
-        doc.SaveAs2(os.path.abspath(docx_path), FileFormat=16)
+        word.DisplayAlerts = False
+        # ConfirmConversions=False 避免弹出"是否转换 PDF"对话框
+        doc = word.Documents.Open(
+            os.path.abspath(pdf_path),
+            ConfirmConversions=False,
+            ReadOnly=False,
+        )
+        # FileFormat=16 -> wdFormatDocumentDefault (.docx)
+        doc.SaveAs(os.path.abspath(docx_path), FileFormat=16)
     finally:
-        if doc:
-            doc.Close()
-        if word:
+        if doc is not None:
+            doc.Close(False)
+        if word is not None:
             word.Quit()
         pythoncom.CoUninitialize()
+
+
+def pdf_to_docx_word(pdf_path: str, docx_path: str):
+    """将 PDF 转为 DOCX。
+
+    优先使用本机 Microsoft Word（格式还原质量最高），
+    若 Word 不可用或转换失败则回退到 pdf2docx。
+    """
+    try:
+        _pdf_to_docx_word_com(pdf_path, docx_path)
+        # Word 偶发返回成功但未生成文件，做一次校验
+        if os.path.exists(docx_path) and os.path.getsize(docx_path) > 0:
+            return
+    except Exception:
+        pass
+
+    _pdf_to_docx_pdf2docx(pdf_path, docx_path)
 
 
 def convert_with_pandoc(input_path: str, output_format: str, output_path: str):
