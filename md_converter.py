@@ -159,7 +159,7 @@ def docx_to_pdf_word(docx_path: str, pdf_path: str):
 
 
 def _pdf_to_docx_pdf2docx(pdf_path: str, docx_path: str):
-    """使用 pdf2docx 将 PDF 转为 DOCX（回退方案）"""
+    """使用 pdf2docx 将 PDF 转为 DOCX。"""
     cv = PdfConverter(os.path.abspath(pdf_path))
     try:
         cv.convert(os.path.abspath(docx_path))
@@ -167,50 +167,46 @@ def _pdf_to_docx_pdf2docx(pdf_path: str, docx_path: str):
         cv.close()
 
 
-def _pdf_to_docx_word_com(pdf_path: str, docx_path: str):
-    """使用 Microsoft Word 直接打开 PDF 并另存为 DOCX。
+def _fix_inline_code_shading(docx_path: str):
+    """修复 pdf2docx 误读的行内代码底纹色。
 
-    Word 2016+ 内置 PDF 重排引擎，对中文、字体、版式的还原显著
-    优于 pdf2docx，且不会把正文拆进大量表格。
+    pdf2docx 会把部分浅灰行内代码背景（GitHub 风格）误读成近黑色
+    (1b1f23)，导致深色文字压在近黑底纹上形成"黑块"看不清。这里把
+    错误的深色底纹统一替换为浅灰 (F5F7FA)，恢复可读性。
     """
-    pythoncom.CoInitialize()
-    word = None
-    doc = None
+    import zipfile
+
+    DOC_PART = "word/document.xml"
     try:
-        word = win32com.client.Dispatch("Word.Application")
-        word.Visible = False
-        word.DisplayAlerts = False
-        # ConfirmConversions=False 避免弹出"是否转换 PDF"对话框
-        doc = word.Documents.Open(
-            os.path.abspath(pdf_path),
-            ConfirmConversions=False,
-            ReadOnly=False,
-        )
-        # FileFormat=16 -> wdFormatDocumentDefault (.docx)
-        doc.SaveAs(os.path.abspath(docx_path), FileFormat=16)
-    finally:
-        if doc is not None:
-            doc.Close(False)
-        if word is not None:
-            word.Quit()
-        pythoncom.CoUninitialize()
+        with zipfile.ZipFile(docx_path, "r") as zin:
+            parts = {name: zin.read(name) for name in zin.namelist()}
+    except (zipfile.BadZipFile, KeyError, OSError):
+        return
+
+    if DOC_PART not in parts:
+        return
+
+    xml = parts[DOC_PART].decode("utf-8", "ignore")
+    fixed = xml.replace('w:fill="1b1f23"', 'w:fill="F5F7FA"').replace(
+        'w:fill="1B1F23"', 'w:fill="F5F7FA"'
+    )
+    if fixed == xml:
+        return
+
+    parts[DOC_PART] = fixed.encode("utf-8")
+    with zipfile.ZipFile(docx_path, "w", zipfile.ZIP_DEFLATED) as zout:
+        for name, data in parts.items():
+            zout.writestr(name, data)
 
 
 def pdf_to_docx_word(pdf_path: str, docx_path: str):
     """将 PDF 转为 DOCX。
 
-    优先使用本机 Microsoft Word（格式还原质量最高），
-    若 Word 不可用或转换失败则回退到 pdf2docx。
+    使用 pdf2docx 转换（保留流式结构，不会像 Word 原生重排那样把
+    文字摆成相互重叠的浮动文本框），再后处理修复行内代码底纹色。
     """
-    try:
-        _pdf_to_docx_word_com(pdf_path, docx_path)
-        # Word 偶发返回成功但未生成文件，做一次校验
-        if os.path.exists(docx_path) and os.path.getsize(docx_path) > 0:
-            return
-    except Exception:
-        pass
-
     _pdf_to_docx_pdf2docx(pdf_path, docx_path)
+    _fix_inline_code_shading(docx_path)
 
 
 def convert_with_pandoc(input_path: str, output_format: str, output_path: str):
