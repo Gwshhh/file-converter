@@ -167,6 +167,95 @@ def _pdf_to_docx_pdf2docx(pdf_path: str, docx_path: str):
         cv.close()
 
 
+def _unwrap_layout_tables(docx_path: str):
+    """拆掉 pdf2docx 用来做版面定位的表格，只保留真正的数据表格。
+
+    pdf2docx 为了还原版式，会把大量正文/行内代码包进单元格表格，
+    并给单元格画上 1px 边框——在 Word 里就是文字周围的细/虚线方框。
+    目标文档里没有这些框，正文是流式段落、只有真正的数据表才有表格。
+
+    本函数：1) 把嵌套在单元格里的表格全部拆出来；2) 把列数 <=2 的
+    顶层表格（版面定位用）拆成普通段落；3) 给剩下的真实数据表去掉
+    单元格边框，统一设置目标文档同款的浅灰表格边框 (DEE2E4)。
+    """
+    import docx
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    try:
+        document = docx.Document(docx_path)
+    except Exception:
+        return
+
+    body = document.element.body
+    P, TBL, TC = qn("w:p"), qn("w:tbl"), qn("w:tc")
+
+    def cols_of(tbl):
+        rows = tbl.findall(qn("w:tr"))
+        return max((len(r.findall(TC)) for r in rows), default=0)
+
+    def all_tables(root):
+        return root.findall(".//" + TBL)
+
+    def unwrap(tbl):
+        parent = tbl.getparent()
+        idx = list(parent).index(tbl)
+        blocks = []
+        for row in tbl.findall(qn("w:tr")):
+            for cell in row.findall(TC):
+                for child in cell.iterchildren():
+                    if child.tag in (P, TBL):
+                        blocks.append(child)
+        for b in blocks:
+            b.getparent().remove(b)
+        for off, b in enumerate(blocks):
+            parent.insert(idx + off, b)
+        parent.remove(tbl)
+
+    def set_clean_borders(tbl):
+        tbl_pr = tbl.find(qn("w:tblPr"))
+        if tbl_pr is None:
+            tbl_pr = OxmlElement("w:tblPr")
+            tbl.insert(0, tbl_pr)
+        for old in tbl_pr.findall(qn("w:tblBorders")):
+            tbl_pr.remove(old)
+        borders = OxmlElement("w:tblBorders")
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            e = OxmlElement("w:" + edge)
+            e.set(qn("w:val"), "single")
+            e.set(qn("w:sz"), "6")
+            e.set(qn("w:space"), "0")
+            e.set(qn("w:color"), "DEE2E4")
+            borders.append(e)
+        tbl_pr.append(borders)
+
+    # 1) 反复拆除嵌套在单元格内的表格
+    while True:
+        nested = [t for t in all_tables(body) if t.getparent().tag == TC]
+        if not nested:
+            break
+        for t in nested:
+            unwrap(t)
+
+    # 2) 拆除列数<=2 的顶层版面定位表格
+    while True:
+        layout = [
+            t for t in all_tables(body) if t.getparent() is body and cols_of(t) <= 2
+        ]
+        if not layout:
+            break
+        for t in layout:
+            unwrap(t)
+
+    # 3) 规范剩余真实数据表的边框
+    for t in [t for t in all_tables(body) if t.getparent() is body]:
+        for tcb in list(t.iter(qn("w:tcBorders"))):
+            tcb.getparent().remove(tcb)
+        set_clean_borders(t)
+
+    document.save(docx_path)
+
+
 def _normalize_code_shading(docx_path: str):
     """规范化行内代码底纹，模仿目标文档的效果。
 
@@ -239,10 +328,12 @@ def pdf_to_docx_word(pdf_path: str, docx_path: str):
     """将 PDF 转为 DOCX。
 
     使用 pdf2docx 转换（保留流式结构，不会像 Word 原生重排那样把
-    文字摆成相互重叠的浮动文本框），再规范化行内代码底纹，使灰底
-    紧贴代码文字、消除铺满单元格的"文本块"灰底与杂散灰块。
+    文字摆成相互重叠的浮动文本框），再拆除版面定位表格（消除文字
+    周围的方框/虚线边框），最后规范化行内代码底纹，使灰底紧贴代码
+    文字、消除铺满单元格的"文本块"灰底与杂散灰块。
     """
     _pdf_to_docx_pdf2docx(pdf_path, docx_path)
+    _unwrap_layout_tables(docx_path)
     _normalize_code_shading(docx_path)
 
 
