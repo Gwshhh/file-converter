@@ -167,80 +167,83 @@ def _pdf_to_docx_pdf2docx(pdf_path: str, docx_path: str):
         cv.close()
 
 
-def _fix_inline_code_shading(docx_path: str):
-    """修复 pdf2docx 误读的行内代码底纹色。
+def _normalize_code_shading(docx_path: str):
+    """规范化行内代码底纹，模仿目标文档的效果。
 
-    pdf2docx 会把部分浅灰行内代码背景（GitHub 风格）误读成近黑色
-    (1b1f23)，导致深色文字压在近黑底纹上形成"黑块"看不清。这里把
-    错误的深色底纹统一替换为浅灰 (F5F7FA)，恢复可读性。
-    """
-    import zipfile
-
-    DOC_PART = "word/document.xml"
-    try:
-        with zipfile.ZipFile(docx_path, "r") as zin:
-            parts = {name: zin.read(name) for name in zin.namelist()}
-    except (zipfile.BadZipFile, KeyError, OSError):
-        return
-
-    if DOC_PART not in parts:
-        return
-
-    xml = parts[DOC_PART].decode("utf-8", "ignore")
-    fixed = xml.replace('w:fill="1b1f23"', 'w:fill="F5F7FA"').replace(
-        'w:fill="1B1F23"', 'w:fill="F5F7FA"'
-    )
-    if fixed == xml:
-        return
-
-    parts[DOC_PART] = fixed.encode("utf-8")
-    with zipfile.ZipFile(docx_path, "w", zipfile.ZIP_DEFLATED) as zout:
-        for name, data in parts.items():
-            zout.writestr(name, data)
-
-
-def _remove_empty_cell_shading(docx_path: str):
-    """删除空白单元格的灰色底纹。
-
-    pdf2docx 用表格做版面定位时，会留下一些没有文字、却带灰色底纹
-    的空单元格，渲染出来就是飘在正文间的灰色色块。这里把所有空白
-    单元格的底纹去掉，消除这些杂散灰块。
+    pdf2docx 会用表格单元格承载行内代码并给整个单元格上底纹，导致
+    灰底铺满单元格宽度形成"文本块"；还会把底纹误加到中文等非代码
+    文字上。本函数把所有单元格级、以及加在非等宽字体上的底纹全部
+    去掉，只给等宽代码字体（Consolas / Courier New）的文字本身加上
+    紧贴文字的浅灰底纹（F5F7FA），效果与目标文档一致。
     """
     import docx
     from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    CODE_FONTS = {"Consolas", "Consola", "Courier New", "Courier"}
+    GRAY = "F5F7FA"
 
     try:
         document = docx.Document(docx_path)
     except Exception:
         return
 
-    changed = False
-    for table in document.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                if cell.text.strip():
-                    continue
-                tc_pr = cell._tc.tcPr
-                if tc_pr is None:
-                    continue
-                for shd in tc_pr.findall(qn("w:shd")):
-                    tc_pr.remove(shd)
-                    changed = True
+    def run_font(rpr):
+        if rpr is None:
+            return None
+        rfonts = rpr.find(qn("w:rFonts"))
+        if rfonts is None:
+            return None
+        for attr in ("w:ascii", "w:hAnsi", "w:cs"):
+            val = rfonts.get(qn(attr))
+            if val:
+                return val
+        return None
 
-    if changed:
-        document.save(docx_path)
+    def run_text(run_el):
+        return "".join(t.text or "" for t in run_el.iter(qn("w:t")))
+
+    def set_run_shading(rpr, fill):
+        for shd in rpr.findall(qn("w:shd")):
+            rpr.remove(shd)
+        if fill is None:
+            return
+        shd = OxmlElement("w:shd")
+        shd.set(qn("w:val"), "clear")
+        shd.set(qn("w:color"), "auto")
+        shd.set(qn("w:fill"), fill)
+        rpr.append(shd)
+
+    body = document.element.body
+
+    # 1) 去掉所有单元格级底纹（含嵌套表格、文本框内的表格）
+    for tc_pr in body.iter(qn("w:tcPr")):
+        for shd in tc_pr.findall(qn("w:shd")):
+            tc_pr.remove(shd)
+
+    # 2) 规范每个 run 的底纹：仅等宽代码字体保留紧贴文字的浅灰底
+    for run_el in body.iter(qn("w:r")):
+        rpr = run_el.find(qn("w:rPr"))
+        if run_font(rpr) in CODE_FONTS and run_text(run_el).strip():
+            if rpr is None:
+                rpr = OxmlElement("w:rPr")
+                run_el.insert(0, rpr)
+            set_run_shading(rpr, GRAY)
+        elif rpr is not None:
+            set_run_shading(rpr, None)
+
+    document.save(docx_path)
 
 
 def pdf_to_docx_word(pdf_path: str, docx_path: str):
     """将 PDF 转为 DOCX。
 
     使用 pdf2docx 转换（保留流式结构，不会像 Word 原生重排那样把
-    文字摆成相互重叠的浮动文本框），再后处理修复行内代码底纹色、
-    并清除空白单元格的杂散灰块。
+    文字摆成相互重叠的浮动文本框），再规范化行内代码底纹，使灰底
+    紧贴代码文字、消除铺满单元格的"文本块"灰底与杂散灰块。
     """
     _pdf_to_docx_pdf2docx(pdf_path, docx_path)
-    _fix_inline_code_shading(docx_path)
-    _remove_empty_cell_shading(docx_path)
+    _normalize_code_shading(docx_path)
 
 
 def convert_with_pandoc(input_path: str, output_format: str, output_path: str):
