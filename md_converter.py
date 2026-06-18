@@ -197,9 +197,43 @@ def _unwrap_layout_tables(docx_path: str):
     def all_tables(root):
         return root.findall(".//" + TBL)
 
+    def table_indent(tbl):
+        """表格自身的左缩进 (twips)，拆表时需补到内部段落上。"""
+        tbl_pr = tbl.find(qn("w:tblPr"))
+        if tbl_pr is None:
+            return 0
+        ind = tbl_pr.find(qn("w:tblInd"))
+        if ind is None:
+            return 0
+        val = ind.get(qn("w:w"))
+        try:
+            return int(round(float(val)))
+        except (TypeError, ValueError):
+            return 0
+
+    def add_left_indent(paragraph, extra):
+        """给段落左缩进追加 extra(twips)，保持拆表后水平位置不变。"""
+        if extra <= 0:
+            return
+        ppr = paragraph.find(qn("w:pPr"))
+        if ppr is None:
+            ppr = OxmlElement("w:pPr")
+            paragraph.insert(0, ppr)
+        ind = ppr.find(qn("w:ind"))
+        if ind is None:
+            ind = OxmlElement("w:ind")
+            ppr.append(ind)
+        cur = ind.get(qn("w:left")) or ind.get(qn("w:start")) or "0"
+        try:
+            base = int(round(float(cur)))
+        except (TypeError, ValueError):
+            base = 0
+        ind.set(qn("w:left"), str(base + extra))
+
     def unwrap(tbl):
         parent = tbl.getparent()
         idx = list(parent).index(tbl)
+        extra_indent = table_indent(tbl)
         blocks = []
         for row in tbl.findall(qn("w:tr")):
             for cell in row.findall(TC):
@@ -207,6 +241,8 @@ def _unwrap_layout_tables(docx_path: str):
                     if child.tag in (P, TBL):
                         blocks.append(child)
         for b in blocks:
+            if b.tag == P:
+                add_left_indent(b, extra_indent)
             b.getparent().remove(b)
         for off, b in enumerate(blocks):
             parent.insert(idx + off, b)
@@ -311,6 +347,7 @@ def _normalize_code_shading(docx_path: str):
             tc_pr.remove(shd)
 
     # 2) 规范每个 run 的底纹：仅等宽代码字体保留紧贴文字的浅灰底
+    code_runs = []
     for run_el in body.iter(qn("w:r")):
         rpr = run_el.find(qn("w:rPr"))
         if run_font(rpr) in CODE_FONTS and run_text(run_el).strip():
@@ -318,8 +355,33 @@ def _normalize_code_shading(docx_path: str):
                 rpr = OxmlElement("w:rPr")
                 run_el.insert(0, rpr)
             set_run_shading(rpr, GRAY)
+            code_runs.append(run_el)
         elif rpr is not None:
             set_run_shading(rpr, None)
+
+    # 3) 在行内代码与中英文之间补一个不带底纹的空格，模仿目标文档
+    #    中行内代码（独立文本框）四周的留白，避免代码与正文挤在一起。
+    def make_space_run():
+        r = OxmlElement("w:r")
+        t = OxmlElement("w:t")
+        t.set(qn("xml:space"), "preserve")
+        t.text = " "
+        r.append(t)
+        return r
+
+    def sibling_text(run_el, after):
+        sib = run_el.getnext() if after else run_el.getprevious()
+        if sib is None or sib.tag != qn("w:r"):
+            return None
+        return run_text(sib)
+
+    for run_el in code_runs:
+        prev_txt = sibling_text(run_el, after=False)
+        if prev_txt and not prev_txt.endswith((" ", "　")):
+            run_el.addprevious(make_space_run())
+        next_txt = sibling_text(run_el, after=True)
+        if next_txt and not next_txt.startswith((" ", "　")):
+            run_el.addnext(make_space_run())
 
     document.save(docx_path)
 
