@@ -199,14 +199,48 @@ def _fix_inline_code_shading(docx_path: str):
             zout.writestr(name, data)
 
 
+def _remove_empty_cell_shading(docx_path: str):
+    """删除空白单元格的灰色底纹。
+
+    pdf2docx 用表格做版面定位时，会留下一些没有文字、却带灰色底纹
+    的空单元格，渲染出来就是飘在正文间的灰色色块。这里把所有空白
+    单元格的底纹去掉，消除这些杂散灰块。
+    """
+    import docx
+    from docx.oxml.ns import qn
+
+    try:
+        document = docx.Document(docx_path)
+    except Exception:
+        return
+
+    changed = False
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if cell.text.strip():
+                    continue
+                tc_pr = cell._tc.tcPr
+                if tc_pr is None:
+                    continue
+                for shd in tc_pr.findall(qn("w:shd")):
+                    tc_pr.remove(shd)
+                    changed = True
+
+    if changed:
+        document.save(docx_path)
+
+
 def pdf_to_docx_word(pdf_path: str, docx_path: str):
     """将 PDF 转为 DOCX。
 
     使用 pdf2docx 转换（保留流式结构，不会像 Word 原生重排那样把
-    文字摆成相互重叠的浮动文本框），再后处理修复行内代码底纹色。
+    文字摆成相互重叠的浮动文本框），再后处理修复行内代码底纹色、
+    并清除空白单元格的杂散灰块。
     """
     _pdf_to_docx_pdf2docx(pdf_path, docx_path)
     _fix_inline_code_shading(docx_path)
+    _remove_empty_cell_shading(docx_path)
 
 
 def convert_with_pandoc(input_path: str, output_format: str, output_path: str):
